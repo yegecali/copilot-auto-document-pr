@@ -36,7 +36,30 @@ jobs:
           git diff origin/${{ github.base_ref }}...HEAD > changes.diff
           echo "diff_file=changes.diff" >> $GITHUB_OUTPUT
 
+      - name: Setup GitHub Copilot CLI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🔍 Verificando disponibilidad de gh CLI..."
+          if command -v gh &> /dev/null; then
+            echo "✅ gh CLI encontrado: $(gh --version | head -1)"
+            
+            echo "🔑 Autenticando con GitHub..."
+            echo "$GH_TOKEN" | gh auth login --with-token
+            
+            echo "📦 Instalando extensión gh-copilot..."
+            gh extension install github/gh-copilot 2>&1 || echo "⚠️  Extensión ya instalada o fallo en instalación"
+            
+            echo "✅ GitHub Copilot CLI configurado"
+            gh copilot --version || echo "ℹ️  Copilot CLI puede no estar completamente disponible"
+          else
+            echo "⚠️  gh CLI no disponible, se usará fallback en Python"
+          fi
+
       - name: Generate Mermaid diagram with Copilot
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python3 scripts/generate_mermaid.py \
             --diff changes.diff \

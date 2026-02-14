@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -42,7 +43,7 @@ Instrucciones:
         print("\n" + "="*60)
         print("📤 ENVIANDO A COPILOT CLI")
         print("="*60)
-        print(f"Comando: gh copilot --prompt '...'")
+        print(f"Comando: gh copilot (stdin)")
         print(f"\nPrompt enviado ({len(prompt)} caracteres):")
         print("-" * 60)
         print(prompt)
@@ -53,34 +54,62 @@ Instrucciones:
         if "GITHUB_TOKEN" in env and "COPILOT_GITHUB_TOKEN" not in env:
             env["COPILOT_GITHUB_TOKEN"] = env["GITHUB_TOKEN"]
             print("🔑 Usando GITHUB_TOKEN para autenticación")
+        if "GH_TOKEN" not in env and "GITHUB_TOKEN" in env:
+            env["GH_TOKEN"] = env["GITHUB_TOKEN"]
 
-        # Intentar diferentes sintaxis del Copilot CLI
-        commands_to_try = [
-            ["gh", "copilot", "--prompt", prompt],
-            ["gh", "copilot", "-p", prompt],
-            ["copilot", "--prompt", prompt],
-            ["copilot", "-p", prompt],
-        ]
+        # Crear archivo temporal con el prompt
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as tmp:
+            tmp.write(prompt)
+            tmp_path = tmp.name
         
-        result = None
-        for cmd in commands_to_try:
-            try:
-                print(f"🔄 Intentando: {' '.join(cmd[:3])}...")
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                    env=env
-                )
-                if result.returncode == 0:
-                    print(f"✅ Comando exitoso: {' '.join(cmd[:3])}")
-                    break
-                else:
-                    print(f"⚠️  Falló con exit code {result.returncode}")
-            except FileNotFoundError:
-                print(f"⚠️  Comando no encontrado: {cmd[0]}")
-                continue
+        try:
+            # Intentar diferentes sintaxis del Copilot CLI
+            commands_to_try = [
+                # Método 1: cat + pipe
+                ["sh", "-c", f"cat {tmp_path} | gh copilot suggest"],
+                # Método 2: gh copilot con stdin
+                ["gh", "copilot", "suggest"],
+            ]
+            
+            result = None
+            for i, cmd in enumerate(commands_to_try):
+                try:
+                    cmd_display = ' '.join(cmd[:3]) if len(cmd) <= 3 else f"{cmd[0]} {cmd[1]} ..."
+                    print(f"🔄 Intento {i+1}: {cmd_display}")
+                    
+                    if i == 0:  # cat + pipe
+                        result = subprocess.run(
+                            cmd,
+                            capture_output=True,
+                            text=True,
+                            timeout=30,
+                            env=env
+                        )
+                    else:  # stdin directo
+                        result = subprocess.run(
+                            cmd,
+                            input=prompt,
+                            capture_output=True,
+                            text=True,
+                            timeout=30,
+                            env=env
+                        )
+                    
+                    if result.returncode == 0:
+                        print(f"✅ Comando exitoso")
+                        break
+                    else:
+                        print(f"⚠️  Falló con exit code {result.returncode}")
+                except FileNotFoundError:
+                    print(f"⚠️  Comando no encontrado: {cmd[0]}")
+                    continue
+                except Exception as e:
+                    print(f"⚠️  Error: {e}")
+                    continue
+        finally:
+            # Limpiar archivo temporal
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
         
         if result is None:
             raise FileNotFoundError("No se encontró ninguna versión de Copilot CLI")
