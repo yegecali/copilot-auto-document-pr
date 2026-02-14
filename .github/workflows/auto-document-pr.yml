@@ -18,6 +18,8 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: true
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -55,25 +57,38 @@ jobs:
           ls -la *.md || true
 
       - name: Commit changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          # Configurar git
+          git config --local user.name 'github-actions[bot]'
+          git config --local user.email 'github-actions[bot]@users.noreply.github.com'
+          
+          echo "📊 Branch actual:"
+          git branch --show-current
           
           echo "📊 Estado de Git antes de add:"
           git status
           
-          echo "📥 Agregando archivos..."
-          git add -A *.md */*.md pr_documentation.md 2>/dev/null || true
-          git add README.md README.MD readme.md Readme.md 2>/dev/null || true
+          echo "📥 Agregando archivos modificados..."
+          git add README.md README.MD readme.md Readme.md pr_documentation.md 2>/dev/null || true
+          
+          echo "📊 Archivos en staging:"
+          git diff --cached --name-only
           
           echo "📊 Estado de Git después de add:"
           git status
           
-          echo "💾 Intentando commit..."
+          echo "💾 Verificando si hay cambios para commitear..."
           if git diff --cached --quiet; then
             echo "⚠️  No hay cambios para commitear"
-          else
-            git commit -m "docs: auto-update README with PR changes [skip ci]"
-            echo "✅ Commit realizado, haciendo push..."
-            git push
+            exit 0
           fi
+          
+          echo "✅ Hay cambios, creando commit..."
+          git commit -m "docs: auto-update README with PR changes [skip ci]"
+          
+          echo "🚀 Haciendo push al branch del PR..."
+          git push origin HEAD:${{ github.head_ref }}
+          
+          echo "✅ Push completado exitosamente!"
