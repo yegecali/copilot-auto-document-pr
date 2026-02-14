@@ -49,6 +49,17 @@ Este Pull Request incluye {{ summary_description }}.
   {% endfor %}
   {% endif %}
 
+{% if comparison_summary %}
+
+## 🧭 Comparación con el PR anterior
+
+{% for item in comparison_summary -%}
+
+- {{ item }}
+  {% endfor %}
+
+{% endif %}
+
 ## 📈 Diagrama de Cambios
 
 {% if mermaid_diagram %}

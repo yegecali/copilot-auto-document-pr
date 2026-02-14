@@ -1,6 +1,8 @@
 # scripts/generate_pr_docs.py
 import os
 import sys
+import json
+import re
 import requests
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +21,90 @@ def load_env():
                     os.environ[key.strip()] = value.strip()
 
 load_env()
+
+def slugify(value):
+    """Convierte texto a slug seguro para nombres de archivo"""
+    if not value:
+        return "pr"
+    value = value.lower()
+    value = re.sub(r"[^a-z0-9]+", "-", value)
+    return value.strip("-") or "pr"
+
+def load_pr_context():
+    """Carga datos del PR desde variables de entorno o evento de GitHub"""
+    pr_number = os.getenv("PR_NUMBER")
+    pr_title = os.getenv("PR_TITLE")
+    pr_url = os.getenv("PR_URL")
+    repo = os.getenv("GITHUB_REPOSITORY")
+    event_path = os.getenv("GITHUB_EVENT_PATH")
+
+    if event_path and Path(event_path).exists():
+        try:
+            with open(event_path, "r", encoding="utf-8") as f:
+                event = json.load(f)
+            pr = event.get("pull_request", {})
+            pr_number = pr_number or pr.get("number")
+            pr_title = pr_title or pr.get("title")
+            pr_url = pr_url or pr.get("html_url")
+            repo = repo or event.get("repository", {}).get("full_name")
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    return {
+        "number": pr_number,
+        "title": pr_title or "PR sin titulo",
+        "url": pr_url,
+        "repo": repo
+    }
+
+def get_history_paths():
+    base_dir = Path(__file__).resolve().parent.parent
+    history_dir = base_dir / "pr_history"
+    index_path = history_dir / "history.json"
+    latest_path = history_dir / "latest.md"
+    return history_dir, index_path, latest_path
+
+def load_history_index(index_path):
+    if index_path.exists():
+        try:
+            with open(index_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return {"entries": []}
+    return {"entries": []}
+
+def save_history_index(index_path, data):
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(index_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def build_comparison_summary(previous_entry, current_entry):
+    if not previous_entry:
+        return []
+
+    summary = []
+    prev_title = previous_entry.get("title", "PR anterior")
+    prev_number = previous_entry.get("number")
+    prev_label = f"#{prev_number} - {prev_title}" if prev_number else prev_title
+    summary.append(f"PR anterior: {prev_label}")
+
+    prev_files = previous_entry.get("files_changed", 0)
+    prev_added = previous_entry.get("lines_added", 0)
+    prev_removed = previous_entry.get("lines_removed", 0)
+    summary.append(f"Archivos modificados: {prev_files} -> {current_entry.get('files_changed', 0)}")
+    summary.append(f"Lineas agregadas: {prev_added} -> {current_entry.get('lines_added', 0)}")
+    summary.append(f"Lineas eliminadas: {prev_removed} -> {current_entry.get('lines_removed', 0)}")
+
+    prev_methods = set(previous_entry.get("new_methods", []))
+    curr_methods = set(current_entry.get("new_methods", []))
+    added_methods = sorted(curr_methods - prev_methods)
+    removed_methods = sorted(prev_methods - curr_methods)
+    if added_methods:
+        summary.append("Nuevos metodos vs anterior: " + ", ".join(added_methods))
+    if removed_methods:
+        summary.append("Metodos ya no presentes: " + ", ".join(removed_methods))
+
+    return summary
 
 def extract_added_methods(diff_content):
     """Extrae métodos/funciones agregados del diff"""
@@ -195,6 +281,12 @@ def analyze_pr_with_copilot(diff_content, readme_content):
         print(f"✅ Métodos detectados: {len(added_methods)}")
         for method_info in added_methods:
             print(f"   - {method_info['lang']}: {method_info['name']}({method_info['params']})")
+
+    # Contexto del PR e historico
+    pr_context = load_pr_context()
+    history_dir, history_index_path, history_latest_path = get_history_paths()
+    history_index = load_history_index(history_index_path)
+    previous_entry = history_index.get("entries", [])[-1] if history_index.get("entries") else None
     
     # Generar diagrama Mermaid específico
     print("📊 Generando diagrama Mermaid de cambios...")
@@ -257,8 +349,40 @@ def analyze_pr_with_copilot(diff_content, readme_content):
     # Renderizar plantilla con Jinja2
     print("🎨 Renderizando documentación con Jinja2...")
     template = Template(template_content)
+    
+    current_entry = {
+        "number": pr_context.get("number"),
+        "title": pr_context.get("title"),
+        "url": pr_context.get("url"),
+        "repo": pr_context.get("repo"),
+        "created_at": datetime.utcnow().isoformat() + "Z",
+        "files_changed": files_changed,
+        "lines_added": lines_added,
+        "lines_removed": lines_removed,
+        "new_methods": [m["name"] for m in added_methods],
+        "changed_files": changed_files_details
+    }
+    comparison_summary = build_comparison_summary(previous_entry, current_entry)
+    template_data["comparison_summary"] = comparison_summary
+    template_data["pr_context"] = pr_context
+
     documentation = template.render(**template_data)
     print("✅ Documentación renderizada exitosamente")
+
+    # Guardar historico si ya existe pr_documentation.md o si hay un PR real
+    existing_doc = Path("pr_documentation.md")
+    if existing_doc.exists() or pr_context.get("number"):
+        history_dir.mkdir(parents=True, exist_ok=True)
+        safe_title = slugify(pr_context.get("title"))
+        pr_number = pr_context.get("number") or "local"
+        history_file = history_dir / f"PR-{pr_number}-{safe_title}.md"
+        with open(history_file, "w", encoding="utf-8") as f:
+            f.write(documentation)
+        with open(history_latest_path, "w", encoding="utf-8") as f:
+            f.write(documentation)
+
+        history_index.setdefault("entries", []).append(current_entry)
+        save_history_index(history_index_path, history_index)
     
     return documentation
 

@@ -71,7 +71,7 @@ jobs:
           git status
           
           echo "📥 Agregando archivos modificados..."
-          git add README.md README.MD readme.md Readme.md pr_documentation.md 2>/dev/null || true
+          git add README.md README.MD readme.md Readme.md pr_documentation.md pr_history 2>/dev/null || true
           
           echo "📊 Archivos en staging:"
           git diff --cached --name-only
