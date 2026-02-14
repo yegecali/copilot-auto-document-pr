@@ -65,24 +65,7 @@ Este Pull Request incluye {{ summary_description }}.
 {% if mermaid_diagram %}
 {{ mermaid_diagram }}
 {% else %}
-
-```mermaid
-graph LR
-    A[Código Original] -->|{{ files_changed }} archivos| B[Cambios Aplicados]
-    B -->|+{{ lines_added }} líneas| C[Código Actualizado]
-    B -->|−{{ lines_removed }} líneas| C
-
-    {% if has_new_feature %}
-    C --> D[✨ Nuevas Funcionalidades]
-    {% endif %}
-    {% if has_fix %}
-    C --> E[🐛 Correcciones]
-    {% endif %}
-    {% if has_refactor %}
-    C --> F[♻️ Optimizaciones]
-    {% endif %}
-```
-
+_No se encontro un diagrama Mermaid generado por Copilot._
 {% endif %}
 
 ## 📝 Impact

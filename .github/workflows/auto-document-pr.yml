@@ -40,7 +40,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python3 scripts/generate_pr_docs.py
+          python3 scripts/generate_pr_docs.py \
+            --diff changes.diff \
+            --context pr_context.json \
+            --output pr_documentation.md \
+            --template scripts/pr_template.md
 
       - name: Post documentation comment on PR
         env:
