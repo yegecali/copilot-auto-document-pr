@@ -36,6 +36,12 @@ jobs:
           git diff origin/${{ github.base_ref }}...HEAD > changes.diff
           echo "diff_file=changes.diff" >> $GITHUB_OUTPUT
 
+      - name: Generate Mermaid diagram with Copilot
+        run: |
+          python3 scripts/generate_mermaid.py \
+            --diff changes.diff \
+            --output scripts/copilot_mermaid.md
+
       - name: Generate documentation with GitHub Copilot
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -75,7 +81,7 @@ jobs:
           git status
           
           echo "📥 Agregando archivos modificados..."
-          git add README.md README.MD readme.md Readme.md pr_documentation.md pr_history 2>/dev/null || true
+          git add README.md README.MD readme.md Readme.md pr_documentation.md pr_history scripts/copilot_mermaid.md 2>/dev/null || true
           
           echo "📊 Archivos en staging:"
           git diff --cached --name-only
