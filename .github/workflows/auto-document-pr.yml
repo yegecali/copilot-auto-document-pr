@@ -44,14 +44,22 @@ jobs:
           if command -v gh &> /dev/null; then
             echo "✅ gh CLI encontrado: $(gh --version | head -1)"
             
-            echo "🔑 Autenticando con GitHub..."
-            echo "$GH_TOKEN" | gh auth login --with-token
+            echo "🔑 Verificando autenticación..."
+            if gh auth status &> /dev/null; then
+              echo "✅ Ya autenticado con GitHub"
+            else
+              echo "🔑 Autenticando con GitHub..."
+              echo "$GH_TOKEN" | gh auth login --with-token
+            fi
             
             echo "📦 Instalando extensión gh-copilot..."
-            gh extension install github/gh-copilot 2>&1 || echo "⚠️  Extensión ya instalada o fallo en instalación"
+            if gh extension list | grep -q "github/gh-copilot"; then
+              echo "✅ Extensión gh-copilot ya instalada"
+            else
+              gh extension install github/gh-copilot 2>&1 || echo "⚠️  Fallo en instalación, usando fallback"
+            fi
             
             echo "✅ GitHub Copilot CLI configurado"
-            gh copilot --version || echo "ℹ️  Copilot CLI puede no estar completamente disponible"
           else
             echo "⚠️  gh CLI no disponible, se usará fallback en Python"
           fi
