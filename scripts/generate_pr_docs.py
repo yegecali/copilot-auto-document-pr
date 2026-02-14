@@ -29,10 +29,28 @@ def analyze_pr_with_copilot(diff_content, readme_content):
     if not github_token:
         raise ValueError("GITHUB_TOKEN no configurada. Por favor, configura tu token de GitHub.")
     
+    print("🔍 Analizando cambios del PR...")
+    print(f"📄 Tamaño del diff: {len(diff_content)} caracteres")
+    
     # Análisis básico de cambios
-    lines_added = len([l for l in diff_content.split('\n') if l.startswith('+')])
-    lines_removed = len([l for l in diff_content.split('\n') if l.startswith('-')])
-    files_changed = len(set([l.split()[2] for l in diff_content.split('\n') if l.startswith('+++')]))
+    lines_added = len([l for l in diff_content.split('\n') if l.startswith('+') and not l.startswith('+++')])
+    lines_removed = len([l for l in diff_content.split('\n') if l.startswith('-') and not l.startswith('---')])
+    
+    # Extraer archivos cambiados de forma segura
+    files = []
+    for line in diff_content.split('\n'):
+        if line.startswith('+++'):
+            parts = line.split()
+            if len(parts) >= 2:
+                # Formato: +++ b/ruta/archivo.ext
+                file_path = parts[1].replace('b/', '') if parts[1].startswith('b/') else parts[1]
+                files.append(file_path)
+                print(f"  📁 Archivo detectado: {file_path}")
+    
+    files_changed = len(set(files))
+    print(f"✅ Archivos únicos modificados: {files_changed}")
+    print(f"➕ Líneas agregadas: {lines_added}")
+    print(f"➖ Líneas eliminadas: {lines_removed}")
     
     # Detectar tipos de cambios
     has_new_feature = any(word in diff_content.lower() for word in ['new', 'add', 'feature', 'implement'])
