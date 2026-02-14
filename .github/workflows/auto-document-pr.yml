@@ -25,15 +25,11 @@ jobs:
           git diff origin/${{ github.base_ref }}...HEAD > changes.diff
           echo "diff_file=changes.diff" >> $GITHUB_OUTPUT
 
-      - name: Generate documentation with AI
-        uses: azure/CLI@v1
+      - name: Generate documentation with GitHub Copilot
         env:
-          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
-          AZURE_OPENAI_KEY: ${{ secrets.AZURE_OPENAI_KEY }}
-        with:
-          inlineScript: |
-            # Aquí llamas a tu Azure OpenAI o Copilot API
-            python3 scripts/generate_pr_docs.py
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/generate_pr_docs.py
 
       - name: Update README
         run: |
