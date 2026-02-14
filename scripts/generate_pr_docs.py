@@ -29,15 +29,29 @@ def extract_added_methods(diff_content):
         if line.startswith('+') and not line.startswith('+++'):
             # Java methods
             if 'public' in line and '(' in line and ')' in line:
-                method_name = line.split('(')[0].strip()
+                signature = line[1:].strip()
+                method_name = signature.split('(')[0].strip()
                 if method_name:
                     method_name = method_name.split()[-1]
-                    added_methods.append(('java', method_name))
+                    params = signature.split('(')[1].split(')')[0].strip()
+                    added_methods.append({
+                        'lang': 'java',
+                        'name': method_name,
+                        'params': params,
+                        'description': "Método agregado en Java"
+                    })
             # Python methods
             elif line.strip().startswith('+ def ') or line.strip().startswith('+def '):
-                method_name = line.split('def ')[1].split('(')[0].strip() if 'def ' in line else None
-                if method_name:
-                    added_methods.append(('python', method_name))
+                signature = line[1:].strip()
+                if 'def ' in signature:
+                    method_name = signature.split('def ')[1].split('(')[0].strip()
+                    params = signature.split('(')[1].split(')')[0].strip()
+                    added_methods.append({
+                        'lang': 'python',
+                        'name': method_name,
+                        'params': params,
+                        'description': "Función agregada en Python"
+                    })
     
     return added_methods
 
@@ -51,7 +65,7 @@ def generate_mermaid_diagram(files, added_methods, has_new_feature, has_fix, has
     has_docs_files = any(f.endswith('.md') for f in files)
     
     # Si hay código Java/Python con métodos nuevos, generar diagrama de secuencia
-    if (has_java or has_python) and added_methods and has_new_feature:
+    if (has_java or has_python) and added_methods:
         diagram = "```mermaid\nsequenceDiagram\n"
         diagram += "    actor User as 👤 Usuario\n"
         
@@ -63,7 +77,8 @@ def generate_mermaid_diagram(files, added_methods, has_new_feature, has_fix, has
         diagram += "\n"
         
         # Agregar llamadas para cada método nuevo
-        for i, (lang, method) in enumerate(added_methods[:5], 1):  # Limitar a 5 métodos
+        for i, method_info in enumerate(added_methods[:5], 1):  # Limitar a 5 métodos
+            method = method_info['name']
             clean_method = method.replace('_', ' ').title()
             if has_java:
                 diagram += f"    User->>Calc: {i}. Llama {clean_method}\n"
@@ -178,8 +193,8 @@ def analyze_pr_with_copilot(diff_content, readme_content):
     added_methods = extract_added_methods(diff_content)
     if added_methods:
         print(f"✅ Métodos detectados: {len(added_methods)}")
-        for lang, method in added_methods:
-            print(f"   - {lang}: {method}()")
+        for method_info in added_methods:
+            print(f"   - {method_info['lang']}: {method_info['name']}({method_info['params']})")
     
     # Generar diagrama Mermaid específico
     print("📊 Generando diagrama Mermaid de cambios...")
@@ -211,6 +226,17 @@ def analyze_pr_with_copilot(diff_content, readme_content):
     # Preparar lista de archivos modificados
     changed_files_details = [f for f in set(files)]
     
+    # Detalles adicionales de cambios
+    code_changes_detail = []
+    if files_changed > 0:
+        code_changes_detail.append(f"Archivos tocados: {files_changed}")
+    if lines_added > 0:
+        code_changes_detail.append(f"Se agregaron {lines_added} líneas nuevas")
+    if lines_removed > 0:
+        code_changes_detail.append(f"Se eliminaron {lines_removed} líneas")
+    if added_methods:
+        code_changes_detail.append(f"Se agregaron {len(added_methods)} nuevos métodos/funciones")
+    
     # Preparar datos para la plantilla
     template_data = {
         'summary_description': ', '.join(summary_parts),
@@ -223,7 +249,9 @@ def analyze_pr_with_copilot(diff_content, readme_content):
         'has_docs': has_docs,
         'has_refactor': has_refactor,
         'mermaid_diagram': mermaid_diagram,
-        'changed_files_details': changed_files_details
+        'changed_files_details': changed_files_details,
+        'new_methods': added_methods,
+        'code_changes_detail': code_changes_detail
     }
     
     # Renderizar plantilla con Jinja2

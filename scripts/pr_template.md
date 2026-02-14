@@ -24,6 +24,31 @@ Este Pull Request incluye {{ summary_description }}.
   {% endfor %}
   {% endif %}
 
+{% if new_methods %}
+
+## ✨ Lo Nuevo en este PR
+
+**Métodos/Funciones agregados:**
+{% for method in new_methods -%}
+
+- **`{{ method.name }}()`**{% if method.params %} → Parámetros: `{{ method.params }}`{% endif %}
+  {% if method.description %}_{{ method.description }}_{% endif %}
+  {% endfor %}
+
+{% if new_methods|length > 0 %}
+💡 **Total:** {{ new_methods|length }} nuevos métodos implementados
+{% endif %}
+{% endif %}
+
+{% if code_changes_detail %}
+
+**Detalles de cambios en código:**
+{% for detail in code_changes_detail -%}
+
+- {{ detail }}
+  {% endfor %}
+  {% endif %}
+
 ## 📈 Diagrama de Cambios
 
 {% if mermaid_diagram %}
