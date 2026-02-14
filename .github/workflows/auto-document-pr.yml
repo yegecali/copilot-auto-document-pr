@@ -36,122 +36,140 @@ jobs:
           git diff origin/${{ github.base_ref }}...HEAD > changes.diff
           echo "diff_file=changes.diff" >> $GITHUB_OUTPUT
 
-      - name: Setup GitHub Copilot CLI
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "🔍 Verificando disponibilidad de gh CLI..."
-          if command -v gh &> /dev/null; then
-            echo "✅ gh CLI encontrado: $(gh --version | head -1)"
-            
-            echo "🔑 Verificando autenticación..."
-            if gh auth status &> /dev/null; then
-              echo "✅ Ya autenticado con GitHub"
-            else
-              echo "🔑 Autenticando con GitHub..."
-              echo "$GH_TOKEN" | gh auth login --with-token
-            fi
-            
-            echo "📦 Instalando extensión gh-copilot..."
-            if gh extension list | grep -q "github/gh-copilot"; then
-              echo "✅ Extensión gh-copilot ya instalada"
-            else
-              gh extension install github/gh-copilot 2>&1 || echo "⚠️  Fallo en instalación, usando fallback"
-            fi
-            
-            echo "✅ GitHub Copilot CLI configurado"
-          else
-            echo "⚠️  gh CLI no disponible, se usará fallback en Python"
-          fi
-
-      - name: Generate Mermaid diagram with GitHub Models API
+      - name: Generate Mermaid diagram with Copilot API
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "🎨 Generando diagrama Mermaid con GitHub Models API..."
+          echo "🎨 Generando diagrama Mermaid con Copilot API..."
           
-          # Obtener diff
-          echo "📊 Leyendo diff..."
-          DIFF_CONTENT=$(head -c 4000 changes.diff)
-          echo "✅ Diff capturado: ${#DIFF_CONTENT} caracteres"
+          # Construir payload con Python para mejor manejo
+          python3 << 'PYTHON_SCRIPT'
+          import json
+          import subprocess
+          import sys
           
-          echo "🔧 Construyendo payload JSON..."
-          # Usar jq para construir JSON correctamente escapado
-          PAYLOAD=$(jq -n \
-            --arg diff "$DIFF_CONTENT" \
-            '{
-              model: "gpt-4o",
-              messages: [
-                {
-                  role: "system",
-                  content: "Eres un experto en diagramas Mermaid. Respondes SOLO con código Mermaid válido dentro de bloques ```mermaid, sin texto adicional."
-                },
-                {
-                  role: "user",
-                  content: ("Analiza estos cambios de código y genera un diagrama de secuencia Mermaid que muestre el flujo de los nuevos métodos/funciones:\n\n```diff\n" + $diff + "\n```\n\nInstrucciones:\n- Si hay métodos Java, muestra su flujo de ejecución\n- Si hay funciones Python, muestra cómo interactúan\n- Usa sequenceDiagram para flujos de métodos\n- Usa graph LR para arquitectura de archivos\n- Responde SOLO con el bloque ```mermaid ... ``` sin explicaciones")
-                }
+          # Leer diff
+          with open('changes.diff', 'r', encoding='utf-8', errors='ignore') as f:
+              diff_content = f.read()[:8000]
+          
+          if not diff_content.strip():
+              print("⚠️ Diff vacío")
+              with open('scripts/copilot_mermaid.md', 'w') as f:
+                  f.write("""```mermaid
+          graph TD
+              A[No Changes Detected]
+          ```""")
+              sys.exit(0)
+          
+          prompt = f"""Analiza estos cambios y genera un diagrama Mermaid:
+
+          ```diff
+          {diff_content}
+          ```
+
+          Genera SOLO código Mermaid dentro de:
+          ```mermaid
+          [tu diagrama]
+          ```
+          
+          Usa sequenceDiagram para flujos, classDiagram para estructuras, o graph TD para arquitectura."""
+          
+          payload = {
+              "messages": [
+                  {
+                      "role": "system",
+                      "content": "Eres experto en Mermaid. Respondes SOLO con código Mermaid válido."
+                  },
+                  {
+                      "role": "user",
+                      "content": prompt
+                  }
               ],
-              temperature: 0.3,
-              max_tokens: 1000
-            }')
+              "model": "gpt-4o",
+              "temperature": 0.3,
+              "max_tokens": 1500
+          }
           
-          echo "✅ Payload JSON construido correctamente"
-          echo "📦 Tamaño del payload: $(echo "$PAYLOAD" | wc -c) bytes"
+          # Guardar payload
+          with open('mermaid-payload.json', 'w') as f:
+              json.dump(payload, f, indent=2)
           
-          echo ""
-          echo "🤖 Llamando a GitHub Models API..."
-          echo "🔑 Token presente: $([ -n "$GITHUB_TOKEN" ] && echo "✅ SÍ" || echo "❌ NO")"
+          print("✅ Payload creado")
+          print(f"📊 Diff size: {len(diff_content)} caracteres")
+          PYTHON_SCRIPT
           
-          # Hacer la llamada al API
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST https://models.inference.ai.azure.com/chat/completions \
+          # Usar el endpoint correcto de Copilot
+          echo "🤖 Llamando a Copilot API..."
+          
+          HTTP_CODE=$(curl -s -w "%{http_code}" -o mermaid-response.json \
+            -X POST "https://api.githubcopilot.com/chat/completions" \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "$PAYLOAD")
-          
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | sed '$d')
+            -H "Editor-Version: vscode/1.95.0" \
+            -H "Editor-Plugin-Version: copilot-chat/0.22.0" \
+            -H "User-Agent: GitHubCopilotChat/0.22.0" \
+            -d @mermaid-payload.json)
           
           echo "📡 HTTP Status Code: $HTTP_CODE"
           
-          if [ "$HTTP_CODE" = "200" ]; then
+          if [ "$HTTP_CODE" -eq 200 ]; then
             echo "✅ API respondió exitosamente"
             
             # Extraer contenido
-            MERMAID_CONTENT=$(echo "$BODY" | jq -r '.choices[0].message.content // empty')
-            
-            if [ -n "$MERMAID_CONTENT" ] && [ "$MERMAID_CONTENT" != "null" ]; then
-              echo "✅ Contenido Mermaid extraído (${#MERMAID_CONTENT} caracteres)"
-              echo "$MERMAID_CONTENT" > scripts/copilot_mermaid.md
+            python3 << 'PYTHON_SCRIPT'
+          import json
+          import sys
+          
+          try:
+              with open('mermaid-response.json', 'r') as f:
+                  response = json.load(f)
               
-              echo "📄 Diagrama generado:"
-              cat scripts/copilot_mermaid.md
-            else
-              echo "❌ El campo 'content' está vacío o es null"
-              echo "📦 Respuesta del API:"
-              echo "$BODY" | jq '.'
-              echo "⚠️  Usando fallback Python..."
+              if 'choices' in response and len(response['choices']) > 0:
+                  content = response['choices'][0]['message']['content']
+                  
+                  if content and content.strip() and content != 'null':
+                      with open('scripts/copilot_mermaid.md', 'w') as f:
+                          f.write(content)
+                      print("✅ Diagrama guardado")
+                      print(f"📄 Preview ({len(content)} caracteres):")
+                      print(content[:300])
+                  else:
+                      print("⚠️ Contenido vacío, usando fallback Python")
+                      raise Exception("Empty content")
+              else:
+                  print("❌ Formato inesperado:", response)
+                  raise Exception("Invalid format")
+          except Exception as e:
+              print(f"Error: {e}")
+              print("🔄 Usando generador Python fallback...")
+              sys.exit(1)
+          PYTHON_SCRIPT
+            
+            PYTHON_EXIT=$?
+            if [ $PYTHON_EXIT -ne 0 ]; then
+              echo "⚠️ Extracción falló, usando fallback Python..."
               python3 scripts/generate_mermaid.py \
                 --diff changes.diff \
                 --output scripts/copilot_mermaid.md
             fi
           else
-            echo "❌ API falló con código $HTTP_CODE"
-            echo "📄 Respuesta de error:"
-            echo "$BODY" | jq '.' 2>/dev/null || echo "$BODY"
-            echo ""
-            echo "⚠️  Usando fallback Python..."
+            echo "❌ Error HTTP $HTTP_CODE"
+            echo "📄 Respuesta del API:"
+            cat mermaid-response.json || echo "No se pudo leer respuesta"
+            
+            # Fallback a generador Python
+            echo "🔄 Usando generador Python fallback..."
             python3 scripts/generate_mermaid.py \
               --diff changes.diff \
               --output scripts/copilot_mermaid.md
           fi
           
-          echo ""
-          echo "📊 Verificando archivo final..."
+          # Verificar archivo final
           if [ -f scripts/copilot_mermaid.md ]; then
             FILESIZE=$(wc -c < scripts/copilot_mermaid.md)
-            echo "✅ scripts/copilot_mermaid.md generado ($FILESIZE bytes)"
+            echo "✅ Diagrama final generado ($FILESIZE bytes)"
           else
-            echo "❌ scripts/copilot_mermaid.md NO existe"
+            echo "❌ Error: archivo no generado"
             exit 1
           fi
 
