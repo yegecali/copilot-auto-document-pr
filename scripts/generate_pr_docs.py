@@ -4,6 +4,7 @@ import sys
 import requests
 from datetime import datetime
 from pathlib import Path
+from jinja2 import Template
 
 # Cargar variables de entorno desde .env
 def load_env():
@@ -21,8 +22,7 @@ load_env()
 
 def analyze_pr_with_copilot(diff_content, readme_content):
     """
-    Usa un análisis simple basado en reglas cuando no hay acceso a API
-    Para producción, considera usar OpenAI API o Azure OpenAI
+    Analiza cambios del PR y genera documentación usando plantilla Jinja2
     """
     github_token = os.getenv('GITHUB_TOKEN')
     
@@ -79,29 +79,36 @@ def analyze_pr_with_copilot(diff_content, readme_content):
         summary_parts = ["cambios generales en el código"]
         changes_list = ["🔧 Cambios generales"]
     
-    documentation = f"""## 📊 PR Summary
-
-Este Pull Request incluye {', '.join(summary_parts)}.
-
-**Estadísticas:**
-- 📁 Archivos modificados: {files_changed}
-- ➕ Líneas agregadas: {lines_added}
-- ➖ Líneas eliminadas: {lines_removed}
-
-## 🔄 Changes
-
-{chr(10).join(f'- {change}' for change in changes_list)}
-
-## 📝 Impact
-
-Este cambio mejora la calidad y funcionalidad del proyecto. Se recomienda revisar los cambios antes de aprobar el merge.
-
-## ✅ Next Steps
-
-- Revisar los cambios en detalle
-- Ejecutar pruebas si están disponibles
-- Verificar que la documentación esté actualizada
-"""
+    # Cargar plantilla Jinja2
+    print("📄 Cargando plantilla pr_template.md...")
+    template_path = Path(__file__).parent / 'pr_template.md'
+    
+    if not template_path.exists():
+        raise FileNotFoundError(f"No se encontró la plantilla: {template_path}")
+    
+    with open(template_path, 'r', encoding='utf-8') as f:
+        template_content = f.read()
+    
+    print("✅ Plantilla cargada exitosamente")
+    
+    # Preparar datos para la plantilla
+    template_data = {
+        'summary_description': ', '.join(summary_parts),
+        'files_changed': files_changed,
+        'lines_added': lines_added,
+        'lines_removed': lines_removed,
+        'changes_list': changes_list,
+        'has_new_feature': has_new_feature,
+        'has_fix': has_fix,
+        'has_docs': has_docs,
+        'has_refactor': has_refactor
+    }
+    
+    # Renderizar plantilla con Jinja2
+    print("🎨 Renderizando documentación con Jinja2...")
+    template = Template(template_content)
+    documentation = template.render(**template_data)
+    print("✅ Documentación renderizada exitosamente")
     
     return documentation
 

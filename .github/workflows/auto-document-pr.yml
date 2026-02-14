@@ -28,7 +28,7 @@ jobs:
       
       - name: Install dependencies
         run: |
-          pip install requests
+          pip install -r scripts/requirements.txt
 
       - name: Get PR changes
         id: changes
