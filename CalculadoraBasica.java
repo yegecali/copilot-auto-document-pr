@@ -10,6 +10,11 @@ public class CalculadoraBasica {
         return a - b;
     }
     
+    // Multiplicación de dos números
+    public double multiplicar(double a, double b) {
+        return a * b;
+    }
+    
     // División de dos números
     public double dividir(double a, double b) {
         if (b == 0) {
@@ -25,6 +30,7 @@ public class CalculadoraBasica {
         System.out.println("=== Calculadora Básica ===");
         System.out.println("10 + 5 = " + calc.sumar(10, 5));
         System.out.println("10 - 5 = " + calc.restar(10, 5));
+        System.out.println("10 * 5 = " + calc.multiplicar(10, 5));
         System.out.println("10 / 5 = " + calc.dividir(10, 5));
         
         // Probar división por cero
