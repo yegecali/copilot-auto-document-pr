@@ -21,63 +21,71 @@ load_env()
 
 def analyze_pr_with_copilot(diff_content, readme_content):
     """
-    Usa GitHub Copilot API para analizar cambios
+    Usa un análisis simple basado en reglas cuando no hay acceso a API
+    Para producción, considera usar OpenAI API o Azure OpenAI
     """
     github_token = os.getenv('GITHUB_TOKEN')
     
     if not github_token:
         raise ValueError("GITHUB_TOKEN no configurada. Por favor, configura tu token de GitHub.")
     
-    prompt = f"""
-    Analiza los siguientes cambios de un Pull Request y genera:
-    1. Un resumen ejecutivo de los cambios
-    2. Lista de features/fixes agregados
-    3. Impacto en la arquitectura (si aplica)
-    4. Sección actualizada para el README.md
+    # Análisis básico de cambios
+    lines_added = len([l for l in diff_content.split('\n') if l.startswith('+')])
+    lines_removed = len([l for l in diff_content.split('\n') if l.startswith('-')])
+    files_changed = len(set([l.split()[2] for l in diff_content.split('\n') if l.startswith('+++')]))
     
-    README ACTUAL:
-    {readme_content}
+    # Detectar tipos de cambios
+    has_new_feature = any(word in diff_content.lower() for word in ['new', 'add', 'feature', 'implement'])
+    has_fix = any(word in diff_content.lower() for word in ['fix', 'bug', 'error', 'issue'])
+    has_docs = any(word in diff_content.lower() for word in ['readme', 'doc', 'documentation'])
+    has_refactor = any(word in diff_content.lower() for word in ['refactor', 'improve', 'optimize'])
     
-    CAMBIOS DEL PR:
-    {diff_content}
+    # Generar documentación
+    summary_parts = []
+    changes_list = []
     
-    Formato de respuesta esperado:
-    ## PR Summary
-    [resumen]
+    if has_new_feature:
+        summary_parts.append("nuevas funcionalidades")
+        changes_list.append("✨ Nueva funcionalidad agregada")
+    if has_fix:
+        summary_parts.append("correcciones de errores")
+        changes_list.append("🐛 Corrección de bugs")
+    if has_docs:
+        summary_parts.append("mejoras en documentación")
+        changes_list.append("📝 Actualización de documentación")
+    if has_refactor:
+        summary_parts.append("refactorización de código")
+        changes_list.append("♻️ Refactorización y optimizaciones")
     
-    ## Changes
-    - Feature/Fix 1
-    - Feature/Fix 2
+    if not summary_parts:
+        summary_parts = ["cambios generales en el código"]
+        changes_list = ["🔧 Cambios generales"]
     
-    ## README Update
-    [contenido para actualizar el README]
-    """
+    documentation = f"""## 📊 PR Summary
+
+Este Pull Request incluye {', '.join(summary_parts)}.
+
+**Estadísticas:**
+- 📁 Archivos modificados: {files_changed}
+- ➕ Líneas agregadas: {lines_added}
+- ➖ Líneas eliminadas: {lines_removed}
+
+## 🔄 Changes
+
+{chr(10).join(f'- {change}' for change in changes_list)}
+
+## 📝 Impact
+
+Este cambio mejora la calidad y funcionalidad del proyecto. Se recomienda revisar los cambios antes de aprobar el merge.
+
+## ✅ Next Steps
+
+- Revisar los cambios en detalle
+- Ejecutar pruebas si están disponibles
+- Verificar que la documentación esté actualizada
+"""
     
-    # GitHub Copilot API endpoint
-    endpoint = "https://api.github.com/copilot_internal/v2/chat/completions"
-    
-    response = requests.post(
-        endpoint,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {github_token}",
-            "X-GitHub-Api-Version": "2024-01-01"
-        },
-        json={
-            "messages": [
-                {"role": "system", "content": "Eres un arquitecto de software experto en documentación técnica."},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.3,
-            "max_tokens": 2000,
-            "model": "gpt-4-turbo"
-        }
-    )
-    
-    if response.status_code != 200:
-        raise Exception(f"Error en Copilot API: {response.status_code} - {response.text}")
-    
-    return response.json()['choices'][0]['message']['content']
+    return documentation
 
 if __name__ == "__main__":
     with open('changes.diff', 'r') as f:
