@@ -19,21 +19,34 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.head_ref }}
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      
+      - name: Install dependencies
+        run: |
+          pip install requests
+
       - name: Get PR changes
         id: changes
         run: |
           git diff origin/${{ github.base_ref }}...HEAD > changes.diff
           echo "diff_file=changes.diff" >> $GITHUB_OUTPUT
 
-      - name: Generate documentation with AI
-        uses: azure/CLI@v1
+      - name: Generate documentation with GitHub Copilot
         env:
-          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
-          AZURE_OPENAI_KEY: ${{ secrets.AZURE_OPENAI_KEY }}
-        with:
-          inlineScript: |
-            # Aquí llamas a tu Azure OpenAI o Copilot API
-            python3 scripts/generate_pr_docs.py
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/generate_pr_docs.py
+
+      - name: Post documentation comment on PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 scripts/post_pr_comment.py
 
       - name: Update README
         run: |
@@ -43,6 +56,6 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add README.md
+          git add README*.md readme*.md pr_documentation.md || true
           git commit -m "docs: auto-update README with PR changes" || echo "No changes to commit"
           git push

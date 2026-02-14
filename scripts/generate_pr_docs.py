@@ -83,7 +83,18 @@ if __name__ == "__main__":
     with open('changes.diff', 'r') as f:
         diff_content = f.read()
     
-    with open('README.md', 'r') as f:
+    # Buscar README en diferentes variantes (prioriza el primero que encuentre)
+    readme_variants = ['README.md', 'README.MD', 'readme.md', 'Readme.md']
+    readme_path = None
+    for variant in readme_variants:
+        if Path(variant).exists():
+            readme_path = variant
+            break
+    
+    if not readme_path:
+        raise FileNotFoundError("No se encontró ningún archivo README (README.md, README.MD, readme.md)")
+    
+    with open(readme_path, 'r') as f:
         readme_content = f.read()
     
     documentation = analyze_pr_with_copilot(diff_content, readme_content)
