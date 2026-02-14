@@ -71,41 +71,86 @@ jobs:
           echo "🎨 Generando diagrama Mermaid con GitHub Models API..."
           
           # Obtener diff
+          echo "📊 Leyendo diff..."
           DIFF_CONTENT=$(cat changes.diff | head -c 5000)
+          echo "✅ Diff capturado: ${#DIFF_CONTENT} caracteres"
+          echo "📄 Preview del diff (primeras 20 líneas):"
+          head -n 20 changes.diff
           
+          echo ""
           echo "🤖 Llamando a GitHub Models API..."
+          echo "🔑 Token presente: $([ -n "$GITHUB_TOKEN" ] && echo "✅ SÍ" || echo "❌ NO")"
           
-          # Generar diagrama Mermaid con GitHub Models
-          curl -X POST https://models.inference.ai.azure.com/chat/completions \
+          # Crear payload y guardar respuesta completa
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST https://models.inference.ai.azure.com/chat/completions \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Content-Type: application/json" \
-            -d @- << 'EOF' | jq -r '.choices[0].message.content' > scripts/copilot_mermaid.md
+            -d @- << EOF
           {
             "model": "gpt-4o",
             "messages": [
               {
                 "role": "system",
-                "content": "Eres un experto en diagramas Mermaid. Respondes SOLO con código Mermaid válido dentro de bloques ```mermaid, sin texto adicional."
+                "content": "Eres un experto en diagramas Mermaid. Respondes SOLO con código Mermaid válido dentro de bloques \`\`\`mermaid, sin texto adicional."
               },
               {
                 "role": "user",
-                "content": "Analiza estos cambios de código y genera un diagrama de secuencia Mermaid que muestre el flujo de los nuevos métodos/funciones:\n\n```diff\n'$DIFF_CONTENT'\n```\n\nInstrucciones:\n- Si hay métodos Java, muestra su flujo de ejecución\n- Si hay funciones Python, muestra cómo interactúan\n- Usa sequenceDiagram para flujos de métodos\n- Usa graph LR para arquitectura de archivos\n- Responde SOLO con el bloque ```mermaid ... ``` sin explicaciones"
+                "content": "Analiza estos cambios de código y genera un diagrama de secuencia Mermaid que muestre el flujo de los nuevos métodos/funciones:\n\n\`\`\`diff\n${DIFF_CONTENT}\n\`\`\`\n\nInstrucciones:\n- Si hay métodos Java, muestra su flujo de ejecución\n- Si hay funciones Python, muestra cómo interactúan\n- Usa sequenceDiagram para flujos de métodos\n- Usa graph LR para arquitectura de archivos\n- Responde SOLO con el bloque \`\`\`mermaid ... \`\`\` sin explicaciones"
               }
             ],
             "temperature": 0.3,
             "max_tokens": 1000
           }
           EOF
+          )
           
-          if [ -f scripts/copilot_mermaid.md ]; then
-            echo "✅ Diagrama Mermaid generado con GitHub Models"
-            echo "📄 Preview:"
-            head -n 20 scripts/copilot_mermaid.md
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          echo "📡 HTTP Status Code: $HTTP_CODE"
+          echo "📦 Respuesta completa del API:"
+          echo "$BODY" | jq '.' || echo "$BODY"
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ API respondió exitosamente"
+            
+            # Extraer contenido
+            MERMAID_CONTENT=$(echo "$BODY" | jq -r '.choices[0].message.content // empty')
+            
+            if [ -n "$MERMAID_CONTENT" ] && [ "$MERMAID_CONTENT" != "null" ]; then
+              echo "✅ Contenido Mermaid extraído"
+              echo "$MERMAID_CONTENT" > scripts/copilot_mermaid.md
+              
+              echo "📄 Contenido generado:"
+              cat scripts/copilot_mermaid.md
+            else
+              echo "❌ El campo 'content' está vacío o es null"
+              echo "🔍 Estructura de la respuesta:"
+              echo "$BODY" | jq '.choices[0]' || echo "No se pudo parsear"
+              echo "⚠️  Usando fallback Python..."
+              python3 scripts/generate_mermaid.py \
+                --diff changes.diff \
+                --output scripts/copilot_mermaid.md
+            fi
           else
-            echo "⚠️  Error con GitHub Models API, usando fallback Python..."
+            echo "❌ API falló con código $HTTP_CODE"
+            echo "📄 Mensaje de error:"
+            echo "$BODY" | jq '.error // .' || echo "$BODY"
+            echo "⚠️  Usando fallback Python..."
             python3 scripts/generate_mermaid.py \
               --diff changes.diff \
               --output scripts/copilot_mermaid.md
+          fi
+          
+          echo ""
+          echo "📊 Archivo final generado:"
+          if [ -f scripts/copilot_mermaid.md ]; then
+            echo "✅ scripts/copilot_mermaid.md existe ($(wc -c < scripts/copilot_mermaid.md) bytes)"
+            echo "📄 Contenido completo:"
+            cat scripts/copilot_mermaid.md
+          else
+            echo "❌ scripts/copilot_mermaid.md NO existe"
+            exit 1
           fi
 
       - name: Generate documentation with GitHub Copilot
