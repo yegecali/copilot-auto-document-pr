@@ -36,11 +36,152 @@ jobs:
           git diff origin/${{ github.base_ref }}...HEAD > changes.diff
           echo "diff_file=changes.diff" >> $GITHUB_OUTPUT
 
+      - name: Generate Mermaid diagram with Copilot API
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🎨 Generando diagrama Mermaid con Copilot API..."
+          
+          # Construir payload con Python para mejor manejo
+          python3 << 'PYTHON_SCRIPT'
+          import json
+          import subprocess
+          import sys
+          
+          # Leer diff
+          with open('changes.diff', 'r', encoding='utf-8', errors='ignore') as f:
+              diff_content = f.read()[:8000]
+          
+          if not diff_content.strip():
+              print("⚠️ Diff vacío")
+              with open('scripts/copilot_mermaid.md', 'w') as f:
+                  f.write("""```mermaid
+          graph TD
+              A[No Changes Detected]
+          ```""")
+              sys.exit(0)
+          
+          prompt = f"""Analiza estos cambios y genera un diagrama Mermaid:
+
+          ```diff
+          {diff_content}
+          ```
+
+          Genera SOLO código Mermaid dentro de:
+          ```mermaid
+          [tu diagrama]
+          ```
+          
+          Usa sequenceDiagram para flujos, classDiagram para estructuras, o graph TD para arquitectura."""
+          
+          payload = {
+              "messages": [
+                  {
+                      "role": "system",
+                      "content": "Eres experto en Mermaid. Respondes SOLO con código Mermaid válido."
+                  },
+                  {
+                      "role": "user",
+                      "content": prompt
+                  }
+              ],
+              "model": "gpt-4o",
+              "temperature": 0.3,
+              "max_tokens": 1500
+          }
+          
+          # Guardar payload
+          with open('mermaid-payload.json', 'w') as f:
+              json.dump(payload, f, indent=2)
+          
+          print("✅ Payload creado")
+          print(f"📊 Diff size: {len(diff_content)} caracteres")
+          PYTHON_SCRIPT
+          
+          # Usar el endpoint correcto de Copilot
+          echo "🤖 Llamando a Copilot API..."
+          
+          HTTP_CODE=$(curl -s -w "%{http_code}" -o mermaid-response.json \
+            -X POST "https://api.githubcopilot.com/chat/completions" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -H "Editor-Version: vscode/1.95.0" \
+            -H "Editor-Plugin-Version: copilot-chat/0.22.0" \
+            -H "User-Agent: GitHubCopilotChat/0.22.0" \
+            -d @mermaid-payload.json)
+          
+          echo "📡 HTTP Status Code: $HTTP_CODE"
+          
+          if [ "$HTTP_CODE" -eq 200 ]; then
+            echo "✅ API respondió exitosamente"
+            
+            # Extraer contenido
+            python3 << 'PYTHON_SCRIPT'
+          import json
+          import sys
+          
+          try:
+              with open('mermaid-response.json', 'r') as f:
+                  response = json.load(f)
+              
+              if 'choices' in response and len(response['choices']) > 0:
+                  content = response['choices'][0]['message']['content']
+                  
+                  if content and content.strip() and content != 'null':
+                      with open('scripts/copilot_mermaid.md', 'w') as f:
+                          f.write(content)
+                      print("✅ Diagrama guardado")
+                      print(f"📄 Preview ({len(content)} caracteres):")
+                      print(content[:300])
+                  else:
+                      print("⚠️ Contenido vacío, usando fallback Python")
+                      raise Exception("Empty content")
+              else:
+                  print("❌ Formato inesperado:", response)
+                  raise Exception("Invalid format")
+          except Exception as e:
+              print(f"Error: {e}")
+              print("🔄 Usando generador Python fallback...")
+              sys.exit(1)
+          PYTHON_SCRIPT
+            
+            PYTHON_EXIT=$?
+            if [ $PYTHON_EXIT -ne 0 ]; then
+              echo "⚠️ Extracción falló, usando fallback Python..."
+              python3 scripts/generate_mermaid.py \
+                --diff changes.diff \
+                --output scripts/copilot_mermaid.md
+            fi
+          else
+            echo "❌ Error HTTP $HTTP_CODE"
+            echo "📄 Respuesta del API:"
+            cat mermaid-response.json || echo "No se pudo leer respuesta"
+            
+            # Fallback a generador Python
+            echo "🔄 Usando generador Python fallback..."
+            python3 scripts/generate_mermaid.py \
+              --diff changes.diff \
+              --output scripts/copilot_mermaid.md
+          fi
+          
+          # Verificar archivo final
+          if [ -f scripts/copilot_mermaid.md ]; then
+            FILESIZE=$(wc -c < scripts/copilot_mermaid.md)
+            echo "✅ Diagrama final generado ($FILESIZE bytes)"
+          else
+            echo "❌ Error: archivo no generado"
+            exit 1
+          fi
+
       - name: Generate documentation with GitHub Copilot
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python3 scripts/generate_pr_docs.py
+          python3 scripts/generate_pr_docs.py \
+            --diff changes.diff \
+            --context pr_context.json \
+            --output pr_documentation.md \
+            --template scripts/pr_template.md
 
       - name: Post documentation comment on PR
         env:
@@ -71,7 +212,7 @@ jobs:
           git status
           
           echo "📥 Agregando archivos modificados..."
-          git add README.md README.MD readme.md Readme.md pr_documentation.md 2>/dev/null || true
+          git add README.md README.MD readme.md Readme.md pr_documentation.md pr_history scripts/copilot_mermaid.md 2>/dev/null || true
           
           echo "📊 Archivos en staging:"
           git diff --cached --name-only
