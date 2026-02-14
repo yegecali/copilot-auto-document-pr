@@ -51,11 +51,29 @@ jobs:
       - name: Update README
         run: |
           python3 scripts/update_readme.py
+          echo "📋 Archivos después de actualizar README:"
+          ls -la *.md || true
 
       - name: Commit changes
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add README*.md readme*.md pr_documentation.md || true
-          git commit -m "docs: auto-update README with PR changes" || echo "No changes to commit"
-          git push
+          
+          echo "📊 Estado de Git antes de add:"
+          git status
+          
+          echo "📥 Agregando archivos..."
+          git add -A *.md */*.md pr_documentation.md 2>/dev/null || true
+          git add README.md README.MD readme.md Readme.md 2>/dev/null || true
+          
+          echo "📊 Estado de Git después de add:"
+          git status
+          
+          echo "💾 Intentando commit..."
+          if git diff --cached --quiet; then
+            echo "⚠️  No hay cambios para commitear"
+          else
+            git commit -m "docs: auto-update README with PR changes [skip ci]"
+            echo "✅ Commit realizado, haciendo push..."
+            git push
+          fi

@@ -106,25 +106,51 @@ Este cambio mejora la calidad y funcionalidad del proyecto. Se recomienda revisa
     return documentation
 
 if __name__ == "__main__":
+    print("🚀 Iniciando generación de documentación del PR...")
+    
+    print("📖 Leyendo changes.diff...")
     with open('changes.diff', 'r') as f:
         diff_content = f.read()
     
+    print(f"✓ Diff leído: {len(diff_content)} caracteres")
+    
     # Buscar README en diferentes variantes (prioriza el primero que encuentre)
+    print("🔍 Buscando README...")
     readme_variants = ['README.md', 'README.MD', 'readme.md', 'Readme.md']
     readme_path = None
     for variant in readme_variants:
         if Path(variant).exists():
             readme_path = variant
+            print(f"✓ README encontrado: {variant}")
             break
     
     if not readme_path:
         raise FileNotFoundError("No se encontró ningún archivo README (README.md, README.MD, readme.md)")
     
+    print(f"📖 Leyendo {readme_path}...")
     with open(readme_path, 'r') as f:
         readme_content = f.read()
     
+    print(f"✓ README leído: {len(readme_content)} caracteres\n")
+    
     documentation = analyze_pr_with_copilot(diff_content, readme_content)
     
+    print("\n" + "=" * 50)
+    print("📝 Documentación generada:")
+    print("=" * 50)
+    print(documentation)
+    print("=" * 50 + "\n")
+    
     # Guardar para el siguiente step
-    with open('pr_documentation.md', 'w') as f:
+    print("💾 Guardando en pr_documentation.md...")
+    with open('pr_documentation.md', 'w', encoding='utf-8') as f:
         f.write(documentation)
+    
+    # Verificar que se guardó correctamente
+    if Path('pr_documentation.md').exists():
+        saved_size = Path('pr_documentation.md').stat().st_size
+        print(f"✅ pr_documentation.md guardado exitosamente ({saved_size} bytes)")
+    else:
+        print("❌ Error: pr_documentation.md no se pudo guardar")
+        import sys
+        sys.exit(1)
