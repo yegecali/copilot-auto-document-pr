@@ -155,15 +155,33 @@ def generate_basic_mermaid(diff_content):
             if len(parts) >= 2:
                 file_path = parts[1].replace("b/", "")
                 filename = file_path.split("/")[-1]
-                files.append(filename)
-                print(f"  📄 Archivo detectado: {filename}")
+                if filename and filename != "/dev/null":
+                    files.append(filename)
+                    print(f"  📄 Archivo detectado: {filename}")
         elif line.startswith("+") and not line.startswith("+++"):
-            if "public" in line and "(" in line:
+            # Detectar métodos Java
+            if "public" in line and "(" in line and not "{" in line[:line.find("(")]:
                 try:
-                    method_name = line.split("(")[0].strip().split()[-1]
-                    if method_name and len(method_name) < 50:
+                    method_part = line.split("(")[0].strip()
+                    method_name = method_part.split()[-1]
+                    # Filtrar nombres válidos: alfanuméricos, guiones bajos
+                    if method_name and len(method_name) < 50 and method_name.replace("_", "").isalnum():
                         methods.append(method_name)
-                        print(f"  ⚙️  Método detectado: {method_name}()")
+                        print(f"  ⚙️  Método Java detectado: {method_name}()")
+                except:
+                    pass
+            # Detectar funciones Python
+            elif "def " in line and "(" in line:
+                try:
+                    # Remover el + del diff y espacios
+                    clean_line = line.lstrip("+").strip()
+                    if clean_line.startswith("def "):
+                        func_part = clean_line.split("(")[0].strip()
+                        func_name = func_part.replace("def ", "").strip()
+                        # Filtrar nombres válidos
+                        if func_name and len(func_name) < 50 and func_name.replace("_", "").isalnum():
+                            methods.append(func_name)
+                            print(f"  🐍 Función Python detectada: {func_name}()")
                 except:
                     pass
     
