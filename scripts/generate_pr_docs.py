@@ -20,6 +20,100 @@ def load_env():
 
 load_env()
 
+def extract_added_methods(diff_content):
+    """Extrae métodos/funciones agregados del diff"""
+    added_methods = []
+    lines = diff_content.split('\n')
+    
+    for line in lines:
+        if line.startswith('+') and not line.startswith('+++'):
+            # Java methods
+            if 'public' in line and '(' in line and ')' in line:
+                method_name = line.split('(')[0].strip()
+                if method_name:
+                    method_name = method_name.split()[-1]
+                    added_methods.append(('java', method_name))
+            # Python methods
+            elif line.strip().startswith('+ def ') or line.strip().startswith('+def '):
+                method_name = line.split('def ')[1].split('(')[0].strip() if 'def ' in line else None
+                if method_name:
+                    added_methods.append(('python', method_name))
+    
+    return added_methods
+
+def generate_mermaid_diagram(files, added_methods, has_new_feature, has_fix, has_refactor, diff_content):
+    """Genera un diagrama Mermaid específico basado en los cambios"""
+    
+    # Detectar tipo de archivos modificados
+    has_java = any('.java' in f for f in files)
+    has_python = any('.py' in f for f in files)
+    has_config = any(f.endswith(('.yml', '.yaml', '.json', '.xml')) for f in files)
+    has_docs_files = any(f.endswith('.md') for f in files)
+    
+    # Si hay código Java/Python con métodos nuevos, generar diagrama de secuencia
+    if (has_java or has_python) and added_methods and has_new_feature:
+        diagram = "```mermaid\nsequenceDiagram\n"
+        diagram += "    actor User as 👤 Usuario\n"
+        
+        if has_java:
+            diagram += "    participant Calc as 📊 Calculadora\n"
+        else:
+            diagram += "    participant App as 🐍 Aplicación\n"
+        
+        diagram += "\n"
+        
+        # Agregar llamadas para cada método nuevo
+        for i, (lang, method) in enumerate(added_methods[:5], 1):  # Limitar a 5 métodos
+            clean_method = method.replace('_', ' ').title()
+            if has_java:
+                diagram += f"    User->>Calc: {i}. Llama {clean_method}\n"
+                diagram += f"    activate Calc\n"
+                diagram += f"    Calc->>Calc: Ejecuta {method}()\n"
+                diagram += f"    Calc-->>User: Retorna resultado\n"
+                diagram += f"    deactivate Calc\n"
+            else:
+                diagram += f"    User->>App: {i}. Usa {clean_method}\n"
+                diagram += f"    activate App\n"
+                diagram += f"    App->>App: Procesa {method}()\n"
+                diagram += f"    App-->>User: Devuelve resultado\n"
+                diagram += f"    deactivate App\n"
+        
+        diagram += "\n    Note over User"
+        if has_java:
+            diagram += ",Calc"
+        else:
+            diagram += ",App"
+        diagram += f": ✨ {len(added_methods)} nuevos métodos agregados\n"
+        diagram += "```"
+        return diagram
+    
+    # Si son cambios de configuración/workflow
+    elif has_config and not has_java and not has_python:
+        diagram = "```mermaid\ngraph TB\n"
+        diagram += "    A[⚙️ Configuración Original] -->|Modificar| B[Archivos Config]\n"
+        for f in files[:3]:
+            file_name = f.split('/')[-1]
+            diagram += f"    B --> C{i}[📝 {file_name}]\n"
+        diagram += "    B --> D[✅ Config Actualizada]\n"
+        diagram += "```"
+        return diagram
+    
+    # Si son solo docs
+    elif has_docs_files and not has_java and not has_python:
+        diagram = "```mermaid\ngraph LR\n"
+        diagram += "    A[📚 Docs Antiguas] -->|Actualizar| B[Cambios]\n"
+        if has_new_feature:
+            diagram += "    B --> C[✨ Nuevas secciones]\n"
+        if has_fix:
+            diagram += "    B --> D[🔧 Correcciones]\n"
+        diagram += "    B --> E[📖 Docs Actualizadas]\n"
+        diagram += "```"
+        return diagram
+    
+    # Diagrama genérico para otros casos
+    else:
+        return None
+
 def analyze_pr_with_copilot(diff_content, readme_content):
     """
     Analiza cambios del PR y genera documentación usando plantilla Jinja2
@@ -79,6 +173,29 @@ def analyze_pr_with_copilot(diff_content, readme_content):
         summary_parts = ["cambios generales en el código"]
         changes_list = ["🔧 Cambios generales"]
     
+    # Extraer métodos agregados
+    print("🔎 Analizando métodos/funciones agregados...")
+    added_methods = extract_added_methods(diff_content)
+    if added_methods:
+        print(f"✅ Métodos detectados: {len(added_methods)}")
+        for lang, method in added_methods:
+            print(f"   - {lang}: {method}()")
+    
+    # Generar diagrama Mermaid específico
+    print("📊 Generando diagrama Mermaid de cambios...")
+    mermaid_diagram = generate_mermaid_diagram(
+        files, 
+        added_methods, 
+        has_new_feature, 
+        has_fix, 
+        has_refactor, 
+        diff_content
+    )
+    if mermaid_diagram:
+        print("✅ Diagrama generado exitosamente")
+    else:
+        print("ℹ️  Usando diagrama genérico")
+    
     # Cargar plantilla Jinja2
     print("📄 Cargando plantilla pr_template.md...")
     template_path = Path(__file__).parent / 'pr_template.md'
@@ -91,6 +208,9 @@ def analyze_pr_with_copilot(diff_content, readme_content):
     
     print("✅ Plantilla cargada exitosamente")
     
+    # Preparar lista de archivos modificados
+    changed_files_details = [f for f in set(files)]
+    
     # Preparar datos para la plantilla
     template_data = {
         'summary_description': ', '.join(summary_parts),
@@ -101,7 +221,9 @@ def analyze_pr_with_copilot(diff_content, readme_content):
         'has_new_feature': has_new_feature,
         'has_fix': has_fix,
         'has_docs': has_docs,
-        'has_refactor': has_refactor
+        'has_refactor': has_refactor,
+        'mermaid_diagram': mermaid_diagram,
+        'changed_files_details': changed_files_details
     }
     
     # Renderizar plantilla con Jinja2
