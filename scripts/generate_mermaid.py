@@ -42,19 +42,48 @@ Instrucciones:
         print("\n" + "="*60)
         print("📤 ENVIANDO A COPILOT CLI")
         print("="*60)
-        print(f"Comando: gh copilot suggest")
+        print(f"Comando: gh copilot --prompt '...'")
         print(f"\nPrompt enviado ({len(prompt)} caracteres):")
         print("-" * 60)
         print(prompt)
         print("-" * 60)
+        
+        # Configurar variables de entorno para autenticación
+        env = os.environ.copy()
+        if "GITHUB_TOKEN" in env and "COPILOT_GITHUB_TOKEN" not in env:
+            env["COPILOT_GITHUB_TOKEN"] = env["GITHUB_TOKEN"]
+            print("🔑 Usando GITHUB_TOKEN para autenticación")
 
-        result = subprocess.run(
-            ["gh", "copilot", "suggest"],
-            input=prompt,
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
+        # Intentar diferentes sintaxis del Copilot CLI
+        commands_to_try = [
+            ["gh", "copilot", "--prompt", prompt],
+            ["gh", "copilot", "-p", prompt],
+            ["copilot", "--prompt", prompt],
+            ["copilot", "-p", prompt],
+        ]
+        
+        result = None
+        for cmd in commands_to_try:
+            try:
+                print(f"🔄 Intentando: {' '.join(cmd[:3])}...")
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    env=env
+                )
+                if result.returncode == 0:
+                    print(f"✅ Comando exitoso: {' '.join(cmd[:3])}")
+                    break
+                else:
+                    print(f"⚠️  Falló con exit code {result.returncode}")
+            except FileNotFoundError:
+                print(f"⚠️  Comando no encontrado: {cmd[0]}")
+                continue
+        
+        if result is None:
+            raise FileNotFoundError("No se encontró ninguna versión de Copilot CLI")
         
         print(f"\n📥 RESPUESTA DE COPILOT (exit code: {result.returncode})")
         print("="*60)
@@ -75,7 +104,7 @@ Instrucciones:
             if "```mermaid" in output:
                 print("✅ Encontrado bloque ```mermaid en la respuesta")
                 start = output.find("```mermaid")
-                end = output.find("""`""", start + 10)
+                end = output.find("```", start + 10)
                 if end > start:
                     extracted = output[start:end + 3]
                     print(f"✅ Extraído bloque Mermaid ({end - start} caracteres)")
@@ -87,13 +116,21 @@ Instrucciones:
             return output
         else:
             print(f"❌ Copilot CLI falló o no retornó output")
-            if result.stderr:
+            if result and result.stderr:
                 print(f"STDERR: {result.stderr}")
             print("="*60 + "\n")
             
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as e:
         print(f"\n❌ EXCEPCIÓN AL LLAMAR COPILOT CLI")
         print(f"Error: {type(e).__name__}: {e}")
+        print("="*60)
+        print("\n💡 SOLUCIONES:")
+        print("  1. Instala GitHub Copilot CLI:")
+        print("     gh extension install github/gh-copilot")
+        print("  2. O instala el CLI standalone:")
+        print("     npm install -g @githubnext/github-copilot-cli")
+        print("  3. Verifica que esté autenticado:")
+        print("     gh auth status")
         print("="*60 + "\n")
     
     # Fallback: generar diagrama básico
